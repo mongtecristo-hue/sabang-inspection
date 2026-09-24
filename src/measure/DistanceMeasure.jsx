@@ -240,7 +240,7 @@ const DistanceMeasure = ({ showToast, defaultTitle = '' }) => {
   const goResult = () => { stopCamera(); setStage('result'); };
   const updateShot = (i, patch) => setShots(s => s.map((x, j) => j === i ? { ...x, ...patch } : x));
 
-  const resetMeasure = () => { setShots([]); setPending(null); setComposite(null); setStage('setup'); };
+  const resetMeasure = () => { setShots([]); setPending(null); setComposite(null); setTitle(defaultTitle); setMemo(''); setStage('setup'); };
 
   const saveRecord = () => {
     if (result.error) return;
