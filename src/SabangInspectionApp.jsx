@@ -3,8 +3,9 @@ import * as XLSX from 'xlsx';
 import {
   Camera, Download, ClipboardList, AlertTriangle, Layers, Home, Info, ShieldCheck,
   CheckSquare, ChevronLeft, ChevronRight, UserCircle, Map, AlertOctagon, Plus, Trash2,
-  FileSpreadsheet, Database, Upload, Bell, CalendarClock
+  FileSpreadsheet, Database, Upload, Bell, CalendarClock, Ruler
 } from 'lucide-react';
+import DistanceMeasure from './measure/DistanceMeasure.jsx';
 
 /* =========================================================================
    사방시설 외관점검 조사 시스템
@@ -701,9 +702,17 @@ const App = () => {
                 <div><h3 className="font-extrabold text-slate-800 text-sm">점검 결과 및 통계</h3>
                   <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">전수 DB·다차원 통계 조회 및 시트별 엑셀 대장(점검주기 포함)을 추출합니다.</p></div>
               </button>
+              <button onClick={() => setCurrentView('measure')} className="md:col-span-2 bg-white hover:bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm flex items-start gap-4 transition-all text-left group">
+                <div className="bg-amber-50 text-amber-600 p-3.5 rounded-xl group-hover:scale-105 transition-transform"><Ruler size={26} /></div>
+                <div><h3 className="font-extrabold text-slate-800 text-sm">카메라 거리측정</h3>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">지점을 조준·촬영해 수평거리·사거리·높이차를 산출하고 기록 사진을 남깁니다.</p></div>
+              </button>
             </div>
           </div>
         )}
+
+        {/* ===== 거리측정 ===== */}
+        {currentView === 'measure' && <DistanceMeasure showToast={showToast} />}
 
         {/* ===== FORM ===== */}
         {currentView === 'form' && (
