@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Ruler, Crosshair, Undo2, X, Check, Compass, Download, Save, RotateCcw, Trash2, Camera, FileSpreadsheet, MapPin } from 'lucide-react';
+import { Ruler, Crosshair, Undo2, X, Check, Compass, Download, Save, RotateCcw, Trash2, Camera, FileSpreadsheet, MapPin, AlertTriangle } from 'lucide-react';
 import { MODES, solve, uncertainty, offsetElevation, destinationPoint, fmtM, fmtNum, fmtDeg } from './geometry.js';
 import { useDeviceTilt, requestTiltPermission } from './useDeviceTilt.js';
 
@@ -11,6 +11,9 @@ import { useDeviceTilt, requestTiltPermission } from './useDeviceTilt.js';
 
 const SETTINGS_KEY = 'sabang.measure.settings';
 const LOG_KEY = 'sabang.measure.log';
+
+// 센서 기반 측정의 한계를 사용자·기록 사진·CSV에 명시한다.
+const REF_NOTICE = '참고용 측정값입니다. 공식 조사서 수치는 줄자·측량기기로 확인하십시오.';
 
 const DEFAULT_SETTINGS = { cameraHeight: '1.5', refHeight: '2.0', fov: '65', declination: '-8.5', calib: { beta: 0, gamma: 0 } };
 
@@ -43,7 +46,8 @@ const buildComposite = async (points, result, unc, meta) => {
     `높이차 ${fmtM(result.summary.heightDiff)}${unc ? ` ±${unc.heightDiff.toFixed(2)}` : ''} (${result.summary.heightDiffBasis})`,
     `${MODES[meta.mode].label} · ${meta.paramText}`,
     `${meta.title ? `[${meta.title}] ` : ''}${meta.time}`,
-    ...(meta.gps ? [`관측점 N ${meta.gps.lat.toFixed(6)}, E ${meta.gps.lng.toFixed(6)}`] : [])
+    ...(meta.gps ? [`관측점 N ${meta.gps.lat.toFixed(6)}, E ${meta.gps.lng.toFixed(6)}`] : []),
+    `※ ${REF_NOTICE}`
   ];
   const band = 22 * lines.length + 28;
   const canvas = document.createElement('canvas');
@@ -66,7 +70,10 @@ const buildComposite = async (points, result, unc, meta) => {
   });
 
   ctx.fillStyle = '#FFFFFF'; ctx.textBaseline = 'top';
-  lines.forEach((t, i) => { ctx.font = i < 2 ? 'bold 16px sans-serif' : '13px sans-serif'; ctx.fillText(t, 10, cellH * rows + 12 + i * 22); });
+  lines.forEach((t, i) => {
+    ctx.font = i < 2 ? 'bold 16px sans-serif' : '13px sans-serif';
+    ctx.fillStyle = i === lines.length - 1 ? '#FBBF24' : '#FFFFFF';
+    ctx.fillText(t, 10, cellH * rows + 12 + i * 22); });
   return canvas.toDataURL('image/jpeg', 0.7);
 };
 
@@ -256,10 +263,10 @@ const DistanceMeasure = ({ showToast, defaultTitle = '' }) => {
   const deleteRecord = (id) => { const next = log.filter(r => r.id !== id); setLog(next); saveJSON(LOG_KEY, next); };
 
   const exportCsv = () => {
-    const head = ['일시', '제목', '방식', '수평거리(m)', '수평거리 오차(±m)', '사거리(m)', '높이차(m)', '높이차 오차(±m)', '높이차 기준', '지점별(라벨:앙각°/사거리m/기저대비m)', '관측점 위도', '관측점 경도', '추정 표적 위도', '추정 표적 경도', '메모'];
+    const head = ['구분', '일시', '제목', '방식', '수평거리(m)', '수평거리 오차(±m)', '사거리(m)', '높이차(m)', '높이차 오차(±m)', '높이차 기준', '지점별(라벨:앙각°/사거리m/기저대비m)', '관측점 위도', '관측점 경도', '추정 표적 위도', '추정 표적 경도', '메모'];
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = log.map(r => [
-      new Date(r.time).toLocaleString('ko-KR'), r.title, MODES[r.mode]?.label,
+      '참고용', new Date(r.time).toLocaleString('ko-KR'), r.title, MODES[r.mode]?.label,
       r.summary.horizontal?.toFixed(2), r.uncertainty?.horizontal?.toFixed(2), r.summary.slope?.toFixed(2), r.summary.heightDiff?.toFixed(2), r.uncertainty?.heightDiff?.toFixed(2), r.summary.heightDiffBasis,
       r.points.map(p => `${p.label}:${p.elev.toFixed(2)}/${p.slope.toFixed(2)}/${p.fromBase.toFixed(2)}`).join(' | '),
       r.gps?.lat?.toFixed(6), r.gps?.lng?.toFixed(6), r.target?.lat?.toFixed(6), r.target?.lng?.toFixed(6), r.memo
@@ -393,6 +400,7 @@ const DistanceMeasure = ({ showToast, defaultTitle = '' }) => {
             </div>
           )}
           {!result.error && <p className="text-[10px] text-slate-400 mt-3">높이차 기준: {result.summary.heightDiffBasis} · 사거리: 카메라 → 마지막 지점 · 오차: 각도 ±0.5° 가정</p>}
+          <p className="text-[11px] font-bold text-amber-300 mt-2 flex items-start gap-1"><AlertTriangle size={13} className="shrink-0 mt-px" />{REF_NOTICE}</p>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
@@ -461,6 +469,7 @@ const DistanceMeasure = ({ showToast, defaultTitle = '' }) => {
       <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-xl">
         <h2 className="text-lg font-black flex items-center gap-2"><Ruler size={20} className="text-emerald-400" />카메라 거리측정</h2>
         <p className="text-xs text-slate-300 mt-1">십자선으로 지점을 조준·촬영하면 수평거리·사거리·높이차를 산출합니다.</p>
+        <p className="text-[11px] font-bold text-amber-300 mt-2 flex items-start gap-1"><AlertTriangle size={13} className="shrink-0 mt-px" />{REF_NOTICE}</p>
       </div>
 
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
