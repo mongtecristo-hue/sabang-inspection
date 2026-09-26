@@ -1,0 +1,100 @@
+name: 거리측정 APK 빌드
+
+on:
+  push:
+    paths:
+      - 'distance-meter/android/**'
+      - '.github/workflows/distance-meter-apk.yml'
+  workflow_dispatch:
+    inputs:
+      host:
+        description: '앱이 열 웹 주소(https:// 없이). 비우면 gradle.properties의 twaHost 사용'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: distance-meter/android
+    env:
+      TWA_VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ubuntu-latest 러너에는 안드로이드 SDK가 설치되어 있다(ANDROID_HOME).
+      - name: 안드로이드 SDK 확인
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/build-tools" | tail -3
+
+      # 고정 서명 키(선택): 저장소 Secrets에 TWA_KEYSTORE_BASE64·TWA_KEYSTORE_PASSWORD가 있으면 사용한다.
+      - name: 서명 키 준비
+        env:
+          KEYSTORE_BASE64: ${{ secrets.TWA_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "TWA_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            echo "고정 서명 키 사용"
+          else
+            echo "::warning::Secrets에 서명 키가 없어 임시 debug 키로 서명합니다. 새 APK를 설치하려면 이전 앱을 먼저 삭제해야 합니다."
+          fi
+
+      - name: APK 빌드
+        env:
+          TWA_KEYSTORE_PASSWORD: ${{ secrets.TWA_KEYSTORE_PASSWORD }}
+          TWA_KEY_ALIAS: ${{ secrets.TWA_KEY_ALIAS }}
+          TWA_KEY_PASSWORD: ${{ secrets.TWA_KEY_PASSWORD }}
+          INPUT_HOST: ${{ inputs.host }}
+        run: |
+          chmod +x gradlew
+          HOST_ARG=""
+          if [ -n "$INPUT_HOST" ]; then HOST_ARG="-PtwaHost=$INPUT_HOST"; fi
+          ./gradlew assembleRelease --no-daemon --stacktrace $HOST_ARG
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/distance-meter.apk"
+
+      # 전체 화면(주소창 없음)에 필요한 assetlinks.json 생성: distance-meter/public/.well-known/ 에 넣는다.
+      - name: 서명 지문·assetlinks.json 생성
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          SHA=$("$APKSIGNER" verify --print-certs "$RUNNER_TEMP/distance-meter.apk" | grep 'SHA-256 digest' | head -1 | awk '{print $NF}' | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//')
+          echo "SHA-256: $SHA"
+          cat > "$RUNNER_TEMP/assetlinks.json" <<JSON
+          [{
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+              "namespace": "android_app",
+              "package_name": "com.mongtecristo.distancemeter",
+              "sha256_cert_fingerprints": ["$SHA"]
+            }
+          }]
+          JSON
+          echo "### 서명 SHA-256" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$SHA\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distance-meter-apk
+          path: |
+            ${{ runner.temp }}/distance-meter.apk
+            ${{ runner.temp }}/assetlinks.json
+
+      # main 브랜치에서는 Releases에 APK를 올려 폰에서 바로 내려받을 수 있게 한다.
+      - name: Release 게시
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: distance-meter-v1.0.${{ github.run_number }}
+          name: 거리측정 v1.0.${{ github.run_number }}
+          files: |
+            ${{ runner.temp }}/distance-meter.apk
+            ${{ runner.temp }}/assetlinks.json
