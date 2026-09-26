@@ -108,19 +108,29 @@ export const MODES = {
 
 const CARD_LABELS = {
   horizontal: '수평거리', slope: '사거리', heightDiff: '높이차',
-  width: 'A–B 간격', total: '총 길이', dA: 'A 수평거리', dB: 'B 수평거리', cameraHeight: '카메라 높이'
+  width: 'A–B 간격', total: '총 길이', dA: 'A 수평거리', dB: 'B 수평거리', cameraHeight: '카메라 높이',
+  grade: '경사도'
 };
+
+// 결과 항목 단위: 경사도는 %, 나머지는 m
+export const CARD_UNITS = { grade: '%' };
+export const cardUnit = (k) => CARD_UNITS[k] || 'm';
+export const fmtCard = (k, v, digits = 2) => (v == null || !isFinite(v)) ? '-' : `${fmtNum(v, k === 'grade' ? 1 : digits)} ${cardUnit(k)}`;
+// 경사도(%) → 경사각(°)
+export const gradeToDeg = (pct) => Math.atan(pct / 100) * DEG;
 
 // 연직선 위 지점들(같은 수평거리 D)의 결과
 const verticalPoints = (D, shots, h, nRef) => {
   const base = shots[0];
   const points = shots.map((s, i) => {
     const fromEye = D * tan(s.elev);
+    const fromGround = h > 0 ? h + fromEye : null;
     return {
       ...s, isRef: i < nRef, horizontal: D,
+      grade: ((fromGround ?? fromEye) / D) * 100,  // 관측자 발밑(카메라 높이 미입력 시 카메라) → 지점 경사도
       slope: D / Math.cos(s.elev * RAD),
       fromEye,
-      fromGround: h > 0 ? h + fromEye : null,
+      fromGround,
       fromBase: D * (tan(s.elev) - tan(base.elev))
     };
   });
@@ -131,10 +141,11 @@ const verticalPoints = (D, shots, h, nRef) => {
     summary: {
       horizontal: D,
       slope: last.slope,
-      heightDiff: multi ? last.fromBase : (last.fromGround ?? last.fromEye)
+      heightDiff: multi ? last.fromBase : (last.fromGround ?? last.fromEye),
+      grade: last.grade
     },
     basis: multi ? `${base.label} → ${last.label}` : (last.fromGround != null ? '관측자 발밑 → 지점' : '카메라 → 지점'),
-    cards: ['horizontal', 'slope', 'heightDiff']
+    cards: ['horizontal', 'slope', 'heightDiff', 'grade']
   };
 };
 

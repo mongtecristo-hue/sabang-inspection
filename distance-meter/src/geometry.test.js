@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cameraElevation, cameraHeading, deviceLongAxisSlope, yawDelta, effectiveFov, offsetElevation,
-  solve, uncertainty, destinationPoint
+  solve, uncertainty, destinationPoint, fmtCard, gradeToDeg
 } from './geometry.js';
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`);
@@ -80,6 +80,19 @@ test('폭·간격: 두 지점 사이 거리(코사인 법칙)', () => {
   near(r.summary.width, Math.sqrt(400 + 900 - 2 * 20 * 30 * 0.5));
   near(r.summary.dA, 20);
   assert.ok(solve('width', [{ elev: -5 }, { elev: -5 }], { cameraHeight: 1.5 }).error);
+});
+
+test('경사도(%): 관측자 발밑 → 지점, 단위 표기', () => {
+  // 수평 10 m, 발밑 대비 +2.5 m → 25 %
+  const r = solve('known', [{ elev: elevTo(1, 10), label: 'A' }], { knownDistance: 10, cameraHeight: 1.5 });
+  near(r.summary.grade, 25);
+  near(gradeToDeg(100), 45);
+  assert.equal(fmtCard('grade', 25), '25.0 %');
+  assert.equal(fmtCard('horizontal', 10), '10.00 m');
+  // 평지 높이 측정: 발밑 → 상단 6 m / 20 m = 30 %
+  const g = solve('ground', [{ elev: elevTo(-1.5, 20) }, { elev: elevTo(4.5, 20) }], { cameraHeight: 1.5 });
+  near(g.summary.grade, 30);
+  assert.deepEqual(g.cards, ['horizontal', 'slope', 'heightDiff', 'grade']);
 });
 
 test('기준 높이법·거리 입력법', () => {

@@ -4,7 +4,7 @@ import {
   MapPin, AlertTriangle, Settings, List, Share2, Bell, Maximize2, Mountain, Footprints, MoveHorizontal, Timer
 } from 'lucide-react';
 import {
-  MODES, solve, uncertainty, offsetElevation, effectiveFov, destinationPoint, deviceLongAxisSlope, fmtM, fmtNum, fmtDeg
+  MODES, solve, uncertainty, offsetElevation, effectiveFov, destinationPoint, deviceLongAxisSlope, fmtM, fmtNum, fmtDeg, fmtCard, cardUnit, gradeToDeg
 } from './geometry.js';
 import { useDeviceTilt, requestTiltPermission } from './useDeviceTilt.js';
 import { listRecords, putRecord, deleteRecord, loadJSON, saveJSON } from './storage.js';
@@ -318,7 +318,7 @@ const Measure = ({ visible, settings, setSettings, mode, setMode, tilt, enableTi
     const i = shots.length;
     const stepText = i < nRef ? `${nRef > 1 ? `${i + 1}/${nRef}. ` : ''}${M.refSteps[i]}` : '추가 지점을 조준하거나 [결과]를 누르십시오';
     const moveHint = mode === 'move' && i === 1 ? `표적 쪽으로 ${inputs.baseline || '?'} m 곧게 이동한 뒤 같은 지점을 조준하십시오` : '';
-    const liveText = live ? live.cards.slice(0, 3).map(k => `${live.cardLabels[k]} ${fmtM(live.summary[k], 1)}`).join(' · ') : '';
+    const liveText = live ? live.cards.map(k => `${live.cardLabels[k]} ${fmtCard(k, live.summary[k], 1)}`).join(' · ') : '';
     return (
       <div className="fixed inset-0 z-40 bg-black text-white select-none">
         <video ref={videoRef} playsInline muted autoPlay className={`absolute inset-0 w-full h-full object-cover ${stage === 'review' ? 'invisible' : ''}`} />
@@ -414,17 +414,18 @@ const Measure = ({ visible, settings, setSettings, mode, setMode, tilt, enableTi
           {result.error ? (
             <p className="mt-2 text-sm font-bold text-rose-300">{result.error}</p>
           ) : (
-            <div className={`grid gap-2 mt-3 text-center ${result.cards.length === 1 ? 'grid-cols-1' : 'grid-cols-3'}`}>
+            <div className={`grid gap-2 mt-3 text-center ${result.cards.length === 1 ? 'grid-cols-1' : result.cards.length === 4 ? 'grid-cols-2' : 'grid-cols-3'}`}>
               {result.cards.map(k => (
                 <div key={k} className="bg-white/5 rounded-xl p-3">
                   <div className="text-[11px] font-bold text-slate-400">{result.cardLabels[k]}</div>
-                  <div className="text-xl font-black mt-1">{fmtNum(result.summary[k])}<span className="text-xs text-slate-400 ml-0.5">m</span></div>
-                  {unc && <div className="text-[11px] text-slate-400">±{unc[k].toFixed(2)} m</div>}
+                  <div className="text-2xl font-black mt-1">{fmtNum(result.summary[k], k === 'grade' ? 1 : 2)}<span className="text-sm text-slate-400 ml-0.5">{cardUnit(k)}</span></div>
+                  {k === 'grade' && <div className="text-[11px] text-slate-300">경사각 {gradeToDeg(result.summary[k]).toFixed(1)}°</div>}
+                  {unc && <div className="text-[11px] text-slate-400">±{unc[k].toFixed(k === 'grade' ? 1 : 2)} {cardUnit(k)}</div>}
                 </div>
               ))}
             </div>
           )}
-          {!result.error && <p className="text-[11px] text-slate-400 mt-3">기준: {result.basis} · 오차: 앙각 ±{sigma}° 가정</p>}
+          {!result.error && <p className="text-[11px] text-slate-400 mt-3">{result.cards.includes('heightDiff') ? '높이차 기준' : '기준'}: {result.basis}{result.cards.includes('grade') ? ' · 경사도: 관측자 발밑 → 마지막 지점' : ''} · 오차: 앙각 ±{sigma}° 가정</p>}
           <p className="text-xs font-bold text-amber-300 mt-2 flex items-start gap-1"><AlertTriangle size={14} className="shrink-0 mt-px" />{REF_NOTICE}</p>
         </section>
 
@@ -445,7 +446,7 @@ const Measure = ({ visible, settings, setSettings, mode, setMode, tilt, enableTi
             <table className="w-full text-sm">
               <thead><tr className="text-slate-400 text-[11px] border-b border-slate-100 whitespace-nowrap">
                 <th className="text-left py-2 px-1">지점</th><th className="text-right px-1">앙각°</th><th className="text-right px-1">수평</th>
-                {isWidth ? <><th className="text-right px-1">간격</th><th className="text-right px-1">회전°</th></> : <><th className="text-right px-1">사거리</th><th className="text-right px-1">기저 대비</th></>}
+                {isWidth ? <><th className="text-right px-1">간격</th><th className="text-right px-1">회전°</th></> : <><th className="text-right px-1">사거리</th><th className="text-right px-1">기저 대비</th><th className="text-right px-1">경사%</th></>}
               </tr></thead>
               <tbody>
                 {shots.map((s, i) => {
@@ -457,7 +458,7 @@ const Measure = ({ visible, settings, setSettings, mode, setMode, tilt, enableTi
                       <td className="text-right px-1 font-bold">{fmtNum(p?.horizontal)}</td>
                       {isWidth
                         ? <><td className="text-right px-1 font-bold">{fmtNum(p?.segment)}</td><td className="text-right px-1 font-bold">{p?.turn == null ? '-' : p.turn.toFixed(1)}</td></>
-                        : <><td className="text-right px-1 font-bold">{fmtNum(p?.slope)}</td><td className="text-right px-1 font-bold">{fmtNum(p?.fromBase)}</td></>}
+                        : <><td className="text-right px-1 font-bold">{fmtNum(p?.slope)}</td><td className="text-right px-1 font-bold">{fmtNum(p?.fromBase)}</td><td className="text-right px-1 font-bold">{p?.grade == null ? '-' : fmtNum(p.grade, 1)}</td></>}
                     </tr>
                   );
                 })}
@@ -621,8 +622,8 @@ const Records = ({ records, reload, showToast, openViewer }) => {
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = records.map(r => [
       '참고용', new Date(r.time).toLocaleString('ko-KR'), r.title, MODES[r.mode]?.label,
-      r.cards.map(k => `${r.cardLabels[k]} ${fmtNum(r.summary[k])}`).join(' / '),
-      r.uncertainty ? r.cards.map(k => r.uncertainty[k].toFixed(2)).join(' / ') : '',
+      r.cards.map(k => `${r.cardLabels[k]} ${fmtCard(k, r.summary[k])}`).join(' / '),
+      r.uncertainty ? r.cards.map(k => `${r.uncertainty[k].toFixed(2)} ${cardUnit(k)}`).join(' / ') : '',
       r.basis, r.paramText,
       r.points.map(p => `${p.label}:${p.elev.toFixed(2)}/${fmtNum(p.horizontal)}`).join(' | '),
       r.gps?.lat?.toFixed(6), r.gps?.lng?.toFixed(6), r.target?.lat?.toFixed(6), r.target?.lng?.toFixed(6), r.memo
@@ -641,12 +642,12 @@ const Records = ({ records, reload, showToast, openViewer }) => {
         <section className="bg-slate-900 text-white p-4 rounded-2xl">
           <div className="text-[11px] font-bold text-emerald-300">{MODES[r.mode]?.label} · {new Date(r.time).toLocaleString('ko-KR')}</div>
           <div className="text-lg font-black mt-1">{r.title || '제목 없음'}</div>
-          <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+          <div className={`grid gap-2 mt-3 text-center ${r.cards.length === 4 ? 'grid-cols-2' : 'grid-cols-3'}`}>
             {r.cards.map(k => (
               <div key={k} className="bg-white/5 rounded-xl p-2.5">
                 <div className="text-[10px] font-bold text-slate-400">{r.cardLabels[k]}</div>
-                <div className="text-lg font-black">{fmtNum(r.summary[k])}<span className="text-xs text-slate-400 ml-0.5">m</span></div>
-                {r.uncertainty && <div className="text-[10px] text-slate-400">±{r.uncertainty[k].toFixed(2)}</div>}
+                <div className="text-lg font-black">{fmtNum(r.summary[k], k === 'grade' ? 1 : 2)}<span className="text-xs text-slate-400 ml-0.5">{cardUnit(k)}</span></div>
+                {r.uncertainty && <div className="text-[10px] text-slate-400">±{r.uncertainty[k].toFixed(k === 'grade' ? 1 : 2)} {cardUnit(k)}</div>}
               </div>
             ))}
           </div>
@@ -678,7 +679,7 @@ const Records = ({ records, reload, showToast, openViewer }) => {
           {r.image ? <img src={r.image} alt="" className="w-20 h-20 object-cover rounded-xl" /> : <div className="w-20 h-20 bg-slate-100 rounded-xl" />}
           <div className="flex-1 min-w-0">
             <div className="font-black text-slate-800 truncate">{r.title || MODES[r.mode]?.label}</div>
-            <div className="text-xs text-slate-600 font-bold mt-0.5">{r.cards.slice(0, 3).map(k => `${r.cardLabels[k]} ${fmtM(r.summary[k])}`).join(' · ')}</div>
+            <div className="text-xs text-slate-600 font-bold mt-0.5">{r.cards.map(k => `${r.cardLabels[k]} ${fmtCard(k, r.summary[k])}`).join(' · ')}</div>
             <div className="text-[11px] text-slate-400 mt-0.5">{new Date(r.time).toLocaleString('ko-KR')}</div>
           </div>
         </button>
@@ -797,7 +798,7 @@ const App = () => {
         <Ruler className="text-emerald-400" size={24} />
         <div>
           <h1 className="text-lg font-black leading-tight">거리측정</h1>
-          <p className="text-[11px] text-slate-400">카메라·기울기 센서 수평거리 · 사거리 · 높이차</p>
+          <p className="text-[11px] text-slate-400">카메라·기울기 센서 수평거리 · 사거리 · 높이차 · 경사도</p>
         </div>
       </header>
 

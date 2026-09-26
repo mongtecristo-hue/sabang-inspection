@@ -1,4 +1,4 @@
-import { MODES, fmtM, fmtDeg } from './geometry.js';
+import { MODES, fmtM, fmtDeg, fmtCard, fmtNum } from './geometry.js';
 
 export const REF_NOTICE = '참고용 측정값입니다. 공식 수치는 줄자·측량기기로 확인하십시오.';
 
@@ -17,7 +17,7 @@ const loadImage = (src) => new Promise((res, rej) => { const img = new Image(); 
 const pointCaption = (p) => {
   if (p.station1) return `1차 위치 수평 ${fmtM(p.horizontal)}`;
   if (p.segment != null) return `수평 ${fmtM(p.horizontal)} · 앞 지점과 ${fmtM(p.segment)}`;
-  return `수평 ${fmtM(p.horizontal)} · 사거리 ${fmtM(p.slope)}${p.fromBase != null ? ` · 기저 대비 ${fmtM(p.fromBase)}` : ''}`;
+  return `수평 ${fmtM(p.horizontal)} · 사거리 ${fmtM(p.slope)}${p.fromBase != null ? ` · 기저 대비 ${fmtM(p.fromBase)}` : ''}${p.grade != null ? ` · 경사 ${fmtNum(p.grade, 1)}%` : ''}`;
 };
 
 // 촬영 사진을 나란히 배치하고 조준점·결과를 합성한 기록 사진
@@ -26,7 +26,7 @@ export const buildComposite = async (result, unc, meta) => {
   const cell = 480, cols = Math.min(2, points.length), rows = Math.ceil(points.length / cols);
   const imgs = await Promise.all(points.map(p => (p.frame ? loadImage(p.frame) : null)));
   const cellH = Math.max(...imgs.map(im => (im ? cell * im.height / im.width : cell * 0.75)));
-  const values = result.cards.map(k => `${result.cardLabels[k]} ${fmtM(result.summary[k])}${unc ? ` ±${unc[k].toFixed(2)}` : ''}`);
+  const values = result.cards.map(k => `${result.cardLabels[k]} ${fmtCard(k, result.summary[k])}${unc ? ` ±${unc[k].toFixed(k === 'grade' ? 1 : 2)}${k === 'grade' ? '%' : ''}` : ''}`);
   const lines = [
     values.slice(0, 2).join(' · '),
     ...(values.length > 2 ? [values.slice(2).join(' · ')] : []),
