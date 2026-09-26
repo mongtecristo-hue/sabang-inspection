@@ -30,7 +30,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest 러너에는 안드로이드 SDK가 설치되어 있다(ANDROID_HOME).
+      - name: 안드로이드 SDK 확인
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/build-tools" | tail -3
 
       # 고정 서명 키(선택): 저장소 Secrets에 TWA_KEYSTORE_BASE64·TWA_KEYSTORE_PASSWORD가 있으면 사용한다.
       - name: 서명 키 준비
