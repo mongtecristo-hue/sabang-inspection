@@ -94,6 +94,14 @@ export const MODES = {
     extraLabel: (i) => `지점 ${i + 1}`,
     advanced: true
   },
+  ar: {
+    label: 'AR 측정',
+    short: '10 m 이내 정밀',
+    desc: '카메라가 지면·벽 등 표면을 인식해 A·B 두 점 사이를 측정합니다. 표적까지 걸어가며 표면을 계속 비추면 10 m 내외에서 가장 정확합니다.',
+    refSteps: [],
+    extraLabel: () => '',
+    hidden: true
+  },
   calib: {
     label: '카메라 높이 보정',
     short: '보정',
@@ -258,6 +266,39 @@ export const uncertainty = (mode, shots, params, sigmaDeg = 0.5) => {
   if (mode === 'known' || mode === 'calib') p({ knownDistance: Number(params.knownDistance) * 1.01 });
   return Object.fromEntries(keys.map(k => [k, Math.sqrt(acc[k])]));
 };
+
+/* ---------- AR 측정(WebXR, 좌표 단위 m, Y축이 연직 위) ---------- */
+
+// 두 3차원 점 A→B의 수평거리·사거리·높이차·경사도
+export const arMeasure = (a, b) => {
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+  const horizontal = Math.hypot(dx, dz);
+  return {
+    horizontal,
+    slope: Math.hypot(dx, dy, dz),
+    heightDiff: dy,
+    grade: horizontal > 1e-6 ? (dy / horizontal) * 100 : null
+  };
+};
+
+// 점 A를 지나는 연직선과 카메라 광선(o + s·d) 사이의 최근접점 → 표면이 없는 높이(벽 상단·나무 끝) 측정
+export const verticalLineRayPoint = (a, o, d) => {
+  const n = Math.hypot(d.x, d.y, d.z);
+  const dx = d.x / n, dy = d.y / n, dz = d.z / n;
+  const denom = 1 - dy * dy;
+  if (denom < 1e-4) return null; // 광선이 연직선과 평행
+  const w = { x: a.x - o.x, y: a.y - o.y, z: a.z - o.z };
+  const e = dx * w.x + dy * w.y + dz * w.z;
+  const t = (dy * e - w.y) / denom;
+  return { x: a.x, y: a.y + t, z: a.z };
+};
+
+// 쿼터니언 회전으로 카메라 정면(−Z) 방향 구하기
+export const forwardFromQuaternion = (q) => ({
+  x: -2 * (q.x * q.z + q.w * q.y),
+  y: -2 * (q.y * q.z - q.w * q.x),
+  z: -(1 - 2 * (q.x * q.x + q.y * q.y))
+});
 
 /* ---------- 표적 좌표 추정 ---------- */
 

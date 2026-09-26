@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cameraElevation, cameraHeading, deviceLongAxisSlope, yawDelta, effectiveFov, offsetElevation,
-  solve, uncertainty, destinationPoint, fmtCard, gradeToDeg
+  solve, uncertainty, destinationPoint, fmtCard, gradeToDeg, arMeasure, verticalLineRayPoint, forwardFromQuaternion
 } from './geometry.js';
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`);
@@ -127,4 +127,29 @@ test('표적 좌표: 북쪽 1 km', () => {
   const p = destinationPoint(35, 128, 0, 1000);
   near(p.lng, 128);
   near((p.lat - 35) * 111195, 1000, 1);
+});
+
+test('AR: 두 점 수평거리·사거리·높이차·경사도', () => {
+  const r = arMeasure({ x: 0, y: 0, z: 0 }, { x: 6, y: 2, z: -8 });
+  near(r.horizontal, 10);
+  near(r.slope, Math.hypot(10, 2));
+  near(r.heightDiff, 2);
+  near(r.grade, 20);
+});
+
+test('AR: 연직선–광선 최근접점(벽 높이)', () => {
+  // A(0,0,-5) 위 연직선, 카메라 (0,1.5,0)에서 위로 31° 조준 → 높이 1.5 + 5·tan31°
+  const ang = 31 * Math.PI / 180;
+  const p = verticalLineRayPoint({ x: 0, y: 0, z: -5 }, { x: 0, y: 1.5, z: 0 }, { x: 0, y: Math.sin(ang), z: -Math.cos(ang) });
+  near(p.y, 1.5 + 5 * Math.tan(ang));
+  assert.equal(verticalLineRayPoint({ x: 0, y: 0, z: -5 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }), null);
+});
+
+test('AR: 쿼터니언 정면 방향', () => {
+  const f = forwardFromQuaternion({ x: 0, y: 0, z: 0, w: 1 });
+  near(f.x, 0); near(f.y, 0); near(f.z, -1);
+  // Y축 90° 회전 → 정면이 −X
+  const s = Math.SQRT1_2;
+  const g = forwardFromQuaternion({ x: 0, y: s, z: 0, w: s });
+  near(g.x, -1); near(g.z, 0);
 });

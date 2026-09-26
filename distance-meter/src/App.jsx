@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Ruler, Crosshair, Undo2, X, Check, Compass, Download, Save, RotateCcw, Trash2, Camera, FileSpreadsheet,
-  MapPin, AlertTriangle, Settings, List, Share2, Bell, Maximize2, Mountain, Footprints, MoveHorizontal, Timer
+  MapPin, AlertTriangle, Settings, List, Share2, Bell, Maximize2, Mountain, Footprints, MoveHorizontal, Timer, Scan
 } from 'lucide-react';
 import {
   MODES, solve, uncertainty, offsetElevation, effectiveFov, destinationPoint, deviceLongAxisSlope, fmtM, fmtNum, fmtDeg, fmtCard, cardUnit, gradeToDeg
@@ -9,6 +9,13 @@ import {
 import { useDeviceTilt, requestTiltPermission } from './useDeviceTilt.js';
 import { listRecords, putRecord, deleteRecord, loadJSON, saveJSON } from './storage.js';
 import { REF_NOTICE, captureFrame, buildComposite, dataUrlToBlob, saveBlob, shareBlob, stamp } from './media.js';
+import { useBackHandler } from './useBackHandler.js';
+
+// AR 화면(three.js 포함)은 열 때만 불러온다
+const ArMeasure = lazy(() => import('./ArMeasure.jsx'));
+const checkArSupport = async () => {
+  try { return !!(await navigator.xr?.isSessionSupported('immersive-ar')); } catch { return false; }
+};
 
 /* =========================================================================
    거리측정 — 폰 카메라·기울기 센서 기반 단독 앱
@@ -20,34 +27,6 @@ const DEFAULT_SETTINGS = {
   sigma: '0.5', calibDistance: '10', autoCapture: true, calib: { beta: 0, gamma: 0 }
 };
 const AUTO_HOLD_MS = 1200;
-
-/* ---------- 안드로이드 뒤로가기: 열린 화면을 하나씩 닫는다 ----------
-   화면 하나가 열릴 때 기록(history) 항목 하나를 쌓는다. 뒤로가기로 닫히면 그 항목이 소비되고,
-   화면 버튼으로 닫히면 history.back()으로 항목을 직접 소비해 둘의 개수를 항상 맞춘다. */
-const backStack = [];
-let ignorePops = 0;
-if (typeof window !== 'undefined') {
-  window.addEventListener('popstate', () => {
-    if (ignorePops > 0) { ignorePops -= 1; return; }
-    const top = backStack.pop();
-    if (top) { top.popped = true; top.fn(); }
-  });
-}
-const useBackHandler = (active, onBack) => {
-  const ref = useRef(onBack);
-  ref.current = onBack;
-  useEffect(() => {
-    if (!active) return undefined;
-    const entry = { fn: () => ref.current(), popped: false };
-    backStack.push(entry);
-    history.pushState({ dm: backStack.length }, '');
-    return () => {
-      const i = backStack.indexOf(entry);
-      if (i >= 0) backStack.splice(i, 1);
-      if (!entry.popped) { ignorePops += 1; history.back(); }
-    };
-  }, [active]);
-};
 
 /* ---------- 공용 UI ---------- */
 const Field = ({ label, value, onChange, unit, step = '0.1', hint, placeholder }) => (
@@ -103,7 +82,7 @@ const PhotoViewer = ({ src, name, onClose, showToast }) => {
 /* =========================================================================
    측정 화면
    ========================================================================= */
-const Measure = ({ visible, settings, setSettings, mode, setMode, tilt, enableTilt, showToast, onSaved, openViewer }) => {
+const Measure = ({ visible, arSupported, settings, setSettings, mode, setMode, tilt, enableTilt, showToast, onSaved, openViewer }) => {
   const [stage, setStage] = useState('setup'); // setup | camera | review | result
   const [shots, setShots] = useState([]);
   const [pending, setPending] = useState(null);
@@ -509,8 +488,31 @@ const Measure = ({ visible, settings, setSettings, mode, setMode, tilt, enableTi
   const pickMode = (k) => { setMode(k); setShots([]); };
   const stride = Number(settings.stride) || 0.7;
 
+  const arCard = (
+    <button onClick={() => arSupported && pickMode('ar')} className={`w-full p-3.5 rounded-2xl border text-left flex items-center gap-3 transition ${mode === 'ar' ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' : 'bg-white border-slate-200'} ${arSupported ? '' : 'opacity-60'}`}>
+      <Scan size={26} className={mode === 'ar' ? 'text-emerald-600' : 'text-slate-400'} />
+      <div className="flex-1">
+        <div className={`text-sm font-black ${mode === 'ar' ? 'text-emerald-800' : 'text-slate-700'}`}>AR 측정 <span className="text-[10px] font-bold text-slate-400 ml-1">10 m 이내 · 가장 정확</span></div>
+        <div className="text-[11px] text-slate-400 font-bold">{arSupported ? '표면을 인식해 A·B 두 점 사이를 측정' : '이 브라우저·기기는 AR 미지원(갤럭시 Chrome + ARCore 필요)'}</div>
+      </div>
+    </button>
+  );
+
+  if (mode === 'ar') {
+    return (
+      <div className="space-y-4">
+        {arCard}
+        <button onClick={() => pickMode('ground')} className="text-xs font-bold text-slate-500 underline">센서 방식으로 돌아가기</button>
+        <Suspense fallback={<p className="text-sm text-slate-400">AR 모듈을 불러오는 중…</p>}>
+          <ArMeasure showToast={showToast} onSaved={onSaved} onExit={() => pickMode('ground')} />
+        </Suspense>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {mode !== 'calib' && arCard}
       {mode === 'calib' ? (
         <Card title="카메라 높이 보정">
           <p className="text-xs text-slate-500 leading-relaxed mb-3">줄자로 잰 거리만큼 떨어진 바닥 지점을 평소 측정 자세로 조준합니다. 조준 각도로 카메라 높이를 역산해 저장합니다.</p>
@@ -618,14 +620,14 @@ const Records = ({ records, reload, showToast, openViewer }) => {
   };
 
   const exportCsv = async () => {
-    const head = ['구분', '일시', '제목', '방식', '결과', '오차(±m)', '기준', '조건', '지점별(라벨:앙각°/수평m)', '관측점 위도', '관측점 경도', '추정 표적 위도', '추정 표적 경도', '메모'];
+    const head = ['구분', '일시', '제목', '방식', '결과', '오차(±)', '기준', '조건', '지점별(라벨:앙각°/수평m)', '관측점 위도', '관측점 경도', '추정 표적 위도', '추정 표적 경도', '메모'];
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = records.map(r => [
       '참고용', new Date(r.time).toLocaleString('ko-KR'), r.title, MODES[r.mode]?.label,
       r.cards.map(k => `${r.cardLabels[k]} ${fmtCard(k, r.summary[k])}`).join(' / '),
       r.uncertainty ? r.cards.map(k => `${r.uncertainty[k].toFixed(2)} ${cardUnit(k)}`).join(' / ') : '',
       r.basis, r.paramText,
-      r.points.map(p => `${p.label}:${p.elev.toFixed(2)}/${fmtNum(p.horizontal)}`).join(' | '),
+      r.points.map(p => `${p.label}:${p.elev == null ? '-' : p.elev.toFixed(2)}/${fmtNum(p.horizontal)}`).join(' | '),
       r.gps?.lat?.toFixed(6), r.gps?.lng?.toFixed(6), r.target?.lat?.toFixed(6), r.target?.lng?.toFixed(6), r.memo
     ].map(q).join(','));
     const blob = new Blob(['﻿' + [head.map(q).join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -758,6 +760,8 @@ const App = () => {
   const [viewer, setViewer] = useState(null);
   const [toast, setToast] = useState(null);
   const [tiltActive, setTiltActive] = useState(false);
+  const [arSupported, setArSupported] = useState(false);
+  useEffect(() => { checkArSupport().then(setArSupported); }, []);
   const tilt = useDeviceTilt(tiltActive, settings.calib);
   const toastTimer = useRef(null);
 
@@ -805,7 +809,7 @@ const App = () => {
       <main className="max-w-xl mx-auto p-4">
         {/* 탭을 옮겨도 진행 중인 측정이 사라지지 않도록 숨기기만 한다 */}
         <div hidden={tab !== 'measure'}>
-          <Measure visible={tab === 'measure'} settings={settings} setSettings={setSettings} mode={mode} setMode={setMode} tilt={tilt} enableTilt={enableTilt}
+          <Measure visible={tab === 'measure'} arSupported={arSupported} settings={settings} setSettings={setSettings} mode={mode} setMode={setMode} tilt={tilt} enableTilt={enableTilt}
             showToast={showToast} onSaved={reload} openViewer={(src, name) => setViewer({ src, name })} />
         </div>
         {tab === 'records' && <Records records={records} reload={reload} showToast={showToast} openViewer={(src, name) => setViewer({ src, name })} />}

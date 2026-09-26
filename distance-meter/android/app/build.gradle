@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.application'
+}
+
+// 신뢰할 수 있는 웹 활동(TWA): 설치형 앱 껍데기가 Chrome으로 웹앱을 전체 화면으로 연다.
+// Chrome 안에서 동작하므로 카메라·센서·WebXR(AR)을 그대로 쓸 수 있다.
+def twaHost = project.findProperty('twaHost')
+def assetStatements = '[{\\"relation\\": [\\"delegate_permission/common.handle_all_urls\\"], \\"target\\": {\\"namespace\\": \\"web\\", \\"site\\": \\"https://' + twaHost + '\\"}}]'
+
+// 서명: 환경 변수에 키가 있으면 고정 키로 release 서명(업데이트 설치 가능), 없으면 debug 서명.
+def keystorePath = System.getenv('TWA_KEYSTORE_PATH')
+
+android {
+    namespace 'com.mongtecristo.distancemeter'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.mongtecristo.distancemeter'
+        minSdk 21
+        targetSdk 34
+        versionCode((System.getenv('TWA_VERSION_CODE') ?: '1') as int)
+        versionName '1.0.' + (System.getenv('TWA_VERSION_CODE') ?: '1')
+
+        resValue 'string', 'host', twaHost
+        resValue 'string', 'launch_url', "https://${twaHost}/"
+        resValue 'string', 'asset_statements', assetStatements
+    }
+
+    signingConfigs {
+        if (keystorePath) {
+            release {
+                storeFile file(keystorePath)
+                storePassword System.getenv('TWA_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('TWA_KEY_ALIAS') ?: 'distance-meter'
+                keyPassword System.getenv('TWA_KEY_PASSWORD') ?: System.getenv('TWA_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystorePath ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
